@@ -2460,7 +2460,7 @@ PREVIEW_DOMAIN = 'preview'
 # If set to None, all courses will be listed on the homepage
 HOMEPAGE_COURSE_MAX = None
 
-################################ Settings for Credit Course Requirements ################################
+################################ Settings for Credit Courses ################################
 # Initial delay used for retrying tasks.
 # Additional retries use longer delays.
 # Value is in seconds.
@@ -2469,3 +2469,10 @@ CREDIT_TASK_DEFAULT_RETRY_DELAY = 30
 # Maximum number of retries per task for errors that are not related
 # to throttling.
 CREDIT_TASK_MAX_RETRIES = 5
+
+# Secret keys shared with credit providers.
+# Used to digitally sign credit requests (us --> provider)
+# and validate responses (provider --> us).
+# Each key in the dictionary is a credit provider ID, and
+# the value is the 32-character key.
+CREDIT_PROVIDER_SECRET_KEYS = {}

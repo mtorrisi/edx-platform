@@ -22,6 +22,13 @@ class UserIsNotEligible(Exception):
     pass
 
 
+class CreditProviderNotConfigured(Exception):
+    """
+    The requested credit provider is not configured correctly for the course.
+    """
+    pass
+
+
 class RequestAlreadyCompleted(Exception):
     """
     The user has already submitted a request and received a response from the credit provider.

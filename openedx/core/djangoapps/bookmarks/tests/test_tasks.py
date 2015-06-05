@@ -11,96 +11,134 @@ from student.tests.factories import AdminFactory
 
 from ..models import XBlockCache
 from ..tasks import _calculate_course_xblocks_data, _update_xblocks_cache
+from .test_models import BookmarksTestsBase
 
 
 @ddt.ddt
-class XBlockCacheTaskTests(ModuleStoreTestCase):
+class XBlockCacheTaskTests(BookmarksTestsBase):
     """
-    Test the Bookmark model.
+    Test the XBlockCache model.
     """
     def setUp(self):
         super(XBlockCacheTaskTests, self).setUp()
 
-        self.admin = AdminFactory()
-
-        self.course = CourseFactory.create(display_name='An Introduction to API Testing')
-
-        self.chapter = ItemFactory.create(
-            parent_location=self.course.location, category='chapter', display_name='Week 1'
-        )
-        self.sequential1 = ItemFactory.create(
-            parent_location=self.chapter.location, category='sequential', display_name='Lesson 1'
-        )
-        self.sequential2 = ItemFactory.create(
-            parent_location=self.chapter.location, category='sequential', display_name='Lesson 2'
-        )
-        self.vertical1 = ItemFactory.create(
-            parent_location=self.sequential1.location, category='vertical', display_name='Subsection 1'
-        )
-        self.vertical2 = ItemFactory.create(
-            parent_location=self.sequential1.location, category='vertical', display_name='Subsection 2'
-        )
-
-        # Vertical2 has two parents
-        self.sequential2.children.append(self.vertical2.location)
-        modulestore().update_item(self.sequential2, self.admin.id)  # pylint: disable=no-member
-
-        self.expected_cache_data = {
+        self.course_expected_cache_data = {
             self.course.location: [
                 [],
-            ], self.chapter.location: [
+            ], self.chapter_1.location: [
                 [
                     self.course.location,
                 ],
-            ], self.sequential1.location: [
+            ], self.chapter_2.location: [
                 [
                     self.course.location,
-                    self.chapter.location,
                 ],
-            ], self.sequential2.location: [
+            ], self.sequential_1.location: [
                 [
                     self.course.location,
-                    self.chapter.location,
+                    self.chapter_1.location,
                 ],
-            ], self.vertical1.location: [
+            ], self.sequential_2.location: [
                 [
                     self.course.location,
-                    self.chapter.location,
-                    self.sequential1.location,
+                    self.chapter_1.location,
                 ],
-            ], self.vertical2.location: [
+            ], self.vertical_1.location: [
                 [
                     self.course.location,
-                    self.chapter.location,
-                    self.sequential1.location,
+                    self.chapter_1.location,
+                    self.sequential_1.location,
                 ],
+            ], self.vertical_2.location: [
                 [
                     self.course.location,
-                    self.chapter.location,
-                    self.sequential2.location,
+                    self.chapter_1.location,
+                    self.sequential_2.location,
+                ],
+            ], self.vertical_3.location: [
+                [
+                    self.course.location,
+                    self.chapter_1.location,
+                    self.sequential_2.location,
                 ],
             ],
         }
 
-    def test_calculate_course_xblocks_data(self):
+        self.other_course_expected_cache_data = {
+            self.other_course.location: [
+                [],
+            ], self.other_chapter_1.location: [
+                [
+                    self.other_course.location,
+                ],
+            ], self.other_sequential_1.location: [
+                [
+                    self.other_course.location,
+                    self.other_chapter_1.location,
+                ],
+            ], self.other_sequential_2.location: [
+                [
+                    self.other_course.location,
+                    self.other_chapter_1.location,
+                ],
+            ], self.other_vertical_1.location: [
+                [
+                    self.other_course.location,
+                    self.other_chapter_1.location,
+                    self.other_sequential_1.location,
+                ],
+                [
+                    self.other_course.location,
+                    self.other_chapter_1.location,
+                    self.other_sequential_2.location,
+                ]
+            ], self.other_vertical_2.location: [
+                [
+                    self.other_course.location,
+                    self.other_chapter_1.location,
+                    self.other_sequential_1.location,
+                ],
+            ],
+        }
 
-        blocks_data = _calculate_course_xblocks_data(self.course.id)
+    @ddt.data(
+        ('course',),
+        ('other_course',)
+    )
+    @ddt.unpack
+    def test_calculate_course_xblocks_data(self, course_attr):
+        """
+        Test that the xblocks data is calculated correctly.
+        """
+        course = getattr(self, course_attr)
+        blocks_data = _calculate_course_xblocks_data(course.id)
 
-        for usage_key, __ in self.expected_cache_data.items():
+        expected_cache_data = getattr(self, course_attr + '_expected_cache_data')
+        for usage_key, __ in expected_cache_data.items():
             for path_index, path in enumerate(blocks_data[unicode(usage_key)]['paths']):
-                for node_index, node in enumerate(path):
+                for path_item_index, path_item in enumerate(path):
                     self.assertEqual(
-                        node['usage_key'], self.expected_cache_data[usage_key][path_index][node_index]
+                        path_item['usage_key'], expected_cache_data[usage_key][path_index][path_item_index]
                     )
 
-    def test_update_xblocks_cache(self):
+    @ddt.data(
+        ('course',),
+        ('other_course',)
+    )
+    @ddt.unpack
+    def test_update_xblocks_cache(self, course_attr):
+        """
+        Test that the xblocks data is persisted correctly.
+        """
+        course = getattr(self, course_attr)
+        XBlockCache.objects.filter(course_key=course.id).delete()
+        _update_xblocks_cache(course.id)
 
-        _update_xblocks_cache(self.course.id)
-
-        for usage_key, __ in self.expected_cache_data.items():
+        expected_cache_data = getattr(self, course_attr + '_expected_cache_data')
+        for usage_key, __ in expected_cache_data.items():
             xblock_cache = XBlockCache.objects.get(usage_key=usage_key)
             for path_index, path in enumerate(xblock_cache.paths):
                 for path_item_index, path_item in enumerate(path):
                     self.assertEqual(
-                        path_item.usage_key, self.expected_cache_data[usage_key][path_index][path_item_index]
+                        path_item.usage_key, expected_cache_data[usage_key][path_index][path_item_index + 1]
                     )

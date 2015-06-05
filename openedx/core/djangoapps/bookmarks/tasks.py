@@ -75,6 +75,32 @@ def _paths_from_data(paths_data):
     return [path for path in paths if path]
 
 
+def _paths_equal(paths_1, paths_2):
+    """
+    Check if two paths are equivalent.
+    """
+    if len(paths_1) != len(paths_2):
+        return False
+
+    for path_1, path_2 in zip(paths_1, paths_2):
+        if len(path_1) != len(path_2):
+            return False
+
+        for path_item_1, path_item_2 in zip(path_1, path_2):
+            if path_item_1.display_name != path_item_2.display_name:
+                return False
+
+            usage_key_1 = path_item_1.usage_key.replace(
+                course_key=modulestore().fill_in_run(path_item_1.usage_key.course_key)
+            )
+            usage_key_2 = path_item_1.usage_key.replace(
+                course_key=modulestore().fill_in_run(path_item_2.usage_key.course_key)
+            )
+            if usage_key_1 != usage_key_2:
+                return False
+
+    return True
+
 def _update_xblocks_cache(course_key):
     """
     Calculate the XBlock cache data for a course and update the XBlockCache table.
@@ -82,15 +108,19 @@ def _update_xblocks_cache(course_key):
     from .models import XBlockCache
     blocks_data = _calculate_course_xblocks_data(course_key)
 
+    def update_block_cache_if_needed(block_cache, block_data):
+        paths = _paths_from_data(block_data['paths'])
+        if block_cache.display_name != block_data['display_name'] or not _paths_equal(block_cache.paths, paths):
+            block_cache.display_name = block_data['display_name']
+            block_cache.paths = paths
+            block_cache.save()
+
     with transaction.commit_on_success():
         block_caches = XBlockCache.objects.filter(course_key=course_key)
         for block_cache in block_caches:
-            block_data = blocks_data.pop(unicode(block_cache.usage_key))
-            paths = _paths_from_data(block_data['paths'])
-            if block_cache.display_name != block_data['display_name'] or block_cache.paths != paths:
-                block_cache.display_name = block_data['display_name']
-                block_cache.paths = paths
-                block_cache.save()
+            block_data = blocks_data.pop(unicode(block_cache.usage_key), None)
+            if block_data:
+                update_block_cache_if_needed(block_cache, block_data)
 
     for block_data in blocks_data.values():
         with transaction.commit_on_success():
@@ -102,10 +132,7 @@ def _update_xblocks_cache(course_key):
             })
 
             if not created:
-                if block_cache.display_name != block_data['display_name'] or block_cache.paths != block_data['paths']:
-                    block_cache.display_name = block_data['display_name']
-                    block_cache.paths = block_data['paths']
-                    block_cache.save()
+                update_block_cache_if_needed(block_cache, block_data)
 
 
 @task(name=u'lms.djangoapps.bookmarks.tasks.update_xblock_cache')

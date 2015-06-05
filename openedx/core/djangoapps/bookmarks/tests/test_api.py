@@ -97,7 +97,7 @@ class BookmarksAPITests(BookmarksTestsBase):
         """
         self.assertEqual(len(api.get_bookmarks(user=self.user, course_key=self.course.id)), 2)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(3):
             api.create_bookmark(user=self.user, usage_key=self.vertical_2.location)
 
         self.assertEqual(len(api.get_bookmarks(user=self.user, course_key=self.course.id)), 3)
@@ -108,7 +108,7 @@ class BookmarksAPITests(BookmarksTestsBase):
         """
         self.assertEqual(len(api.get_bookmarks(user=self.user, course_key=self.course.id)), 2)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(3):
             bookmark_data = api.create_bookmark(user=self.user, usage_key=self.vertical_2.location)
 
         self.assertEqual(len(api.get_bookmarks(user=self.user, course_key=self.course.id)), 3)

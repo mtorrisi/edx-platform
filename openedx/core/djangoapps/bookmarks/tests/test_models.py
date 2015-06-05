@@ -77,13 +77,19 @@ class BookmarksTestsBase(ModuleStoreTestCase):
             user=self.user,
             course_key=self.course_id,
             usage_key=self.sequential_1.location,
-            xblock_cache__display_name=self.sequential_1.display_name
+            xblock_cache=XBlockCache.create({
+                'display_name': self.sequential_1.display_name,
+                'usage_key': self.sequential_1.location,
+            }),
         )
         self.bookmark_2 = BookmarkFactory.create(
             user=self.user,
             course_key=self.course_id,
             usage_key=self.sequential_2.location,
-            xblock_cache__display_name=self.sequential_2.display_name
+            xblock_cache=XBlockCache.create({
+                'display_name': self.sequential_2.display_name,
+                'usage_key': self.sequential_2.location,
+            }),
         )
 
         self.other_course = CourseFactory.create(display_name='An Introduction to API Testing 2')
@@ -101,7 +107,7 @@ class BookmarksTestsBase(ModuleStoreTestCase):
             parent_location=self.other_sequential_1.location, category='vertical', display_name='Other Subsection 1'
         )
         self.other_vertical_2 = ItemFactory.create(
-            parent_location=self.other_sequential_2.location, category='vertical', display_name='Other Subsection 2'
+            parent_location=self.other_sequential_1.location, category='vertical', display_name='Other Subsection 2'
         )
 
         # self.other_vertical_1 has two parents
@@ -112,7 +118,10 @@ class BookmarksTestsBase(ModuleStoreTestCase):
             user=self.user,
             course_key=unicode(self.other_course.id),
             usage_key=self.other_vertical_1.location,
-            xblock_cache__display_name=self.other_vertical_1.display_name
+            xblock_cache=XBlockCache.create({
+                'display_name': self.other_vertical_1.display_name,
+                'usage_key': self.other_vertical_1.location,
+            }),
         )
 
     def create_course_with_bookmarks_count(self, count, store_type=ModuleStoreEnum.Type.mongo):
@@ -132,7 +141,10 @@ class BookmarksTestsBase(ModuleStoreTestCase):
                 user=self.user,
                 course_key=course.id,
                 usage_key=block.location,
-                xblock_cache__display_name=block.display_name
+                xblock_cache=XBlockCache.create({
+                    'display_name': block.display_name,
+                    'usage_key': block.location,
+                }),
             ) for block in blocks]
 
         return course, blocks, bookmarks
@@ -219,7 +231,12 @@ class BookmarkModelTests(BookmarksTestsBase):
         block_path = [PathItem(UsageKey.from_string(EXAMPLE_USAGE_KEY_1), '1')]
         mock_get_path.return_value = block_path
 
-        bookmark_data = self.get_bookmark_data(self.vertical_2)
+        html = ItemFactory.create(
+            parent_location=self.other_chapter_1.location, category='html', display_name='Other Lesson 1'
+        )
+        XBlockCache.objects.filter(usage_key=html.location).delete()
+
+        bookmark_data = self.get_bookmark_data(html)
         bookmark = Bookmark.create(bookmark_data)
         self.assertIsNotNone(bookmark.xblock_cache)
 
@@ -248,6 +265,7 @@ class BookmarkModelTests(BookmarksTestsBase):
         ) for ancestor_attr in ancestors_attrs]
 
         bookmark_data = self.get_bookmark_data(getattr(self, block_to_bookmark), user=user)
+        XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
         bookmark = Bookmark.create(bookmark_data)
 
         self.assertEqual(bookmark.path, expected_path)
@@ -264,10 +282,11 @@ class BookmarkModelTests(BookmarksTestsBase):
         self.assertEqual(Bookmark.get_path(usage_key), [])
 
         # Block is an orphan
-        self.other_sequential_2.children = []
-        modulestore().update_item(self.other_sequential_2, self.admin.id)  # pylint: disable=no-member
+        self.other_sequential_1.children = []
+        modulestore().update_item(self.other_sequential_1, self.admin.id)  # pylint: disable=no-member
 
         bookmark_data = self.get_bookmark_data(self.other_vertical_2, user=user)
+        XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
         bookmark = Bookmark.create(bookmark_data)
 
         self.assertEqual(bookmark.path, [])
@@ -278,6 +297,7 @@ class BookmarkModelTests(BookmarksTestsBase):
         with mock.patch('openedx.core.djangoapps.bookmarks.models.search.path_to_location') as mock_path_to_location:
             mock_path_to_location.return_value = [usage_key]
             bookmark_data = self.get_bookmark_data(self.other_sequential_1, user=user)
+            XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
             bookmark = Bookmark.create(bookmark_data)
             self.assertEqual(bookmark.path, [])
 

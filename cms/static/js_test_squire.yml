@@ -62,12 +62,14 @@ lib_paths:
     - xmodule_js/common_static/js/vendor/jQuery-File-Upload/js/jquery.fileupload.js
     - xmodule_js/common_static/js/vendor/jQuery-File-Upload/js/jquery.fileupload-process.js
     - xmodule_js/common_static/js/vendor/jQuery-File-Upload/js/jquery.fileupload-validate.js
+    - xmodule_js/common_static/js/vendor/requirejs/text.js
 
 # Paths to source JavaScript files
 src_paths:
     - coffee/src
     - js
-    - js/common_helpers
+    - templates/js
+    - common/js
 
 # Paths to spec (test) JavaScript files
 spec_paths:
@@ -86,6 +88,7 @@ spec_paths:
 #
 fixture_paths:
     - coffee/fixtures
+    - common/templates
 
 requirejs:
   paths:

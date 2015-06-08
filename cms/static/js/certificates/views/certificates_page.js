@@ -4,7 +4,7 @@ define([ // jshint ignore:line
     'jquery',
     'underscore',
     'gettext',
-    'js/common_helpers/page_helpers',
+    'common/js/spec_helpers/page_helpers',
     'js/views/pages/base_page',
     'js/certificates/views/certificates_list'
 ],

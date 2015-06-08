@@ -1,11 +1,9 @@
-define ["jquery", "jasmine", "js/common_helpers/ajax_helpers", "squire"],
+define ["jquery", "jasmine", "common/js/spec_helpers/ajax_helpers", "squire"],
 ($, jasmine, AjaxHelpers, Squire) ->
 
     feedbackTpl = readFixtures('system-feedback.underscore')
     assetLibraryTpl = readFixtures('asset-library.underscore')
     assetTpl = readFixtures('asset.underscore')
-    pagingHeaderTpl = readFixtures('paging-header.underscore')
-    pagingFooterTpl = readFixtures('paging-footer.underscore')
 
     describe "Asset view", ->
         beforeEach ->
@@ -141,8 +139,6 @@ define ["jquery", "jasmine", "js/common_helpers/ajax_helpers", "squire"],
         beforeEach ->
             setFixtures($("<script>", {id: "asset-library-tpl", type: "text/template"}).text(assetLibraryTpl))
             appendSetFixtures($("<script>", {id: "asset-tpl", type: "text/template"}).text(assetTpl))
-            appendSetFixtures($("<script>", {id: "paging-header-tpl", type: "text/template"}).text(pagingHeaderTpl))
-            appendSetFixtures($("<script>", {id: "paging-footer-tpl", type: "text/template"}).text(pagingFooterTpl))
             appendSetFixtures($("<script>", {id: "system-feedback-tpl", type: "text/template"}).text(feedbackTpl))
             window.analytics = jasmine.createSpyObj('analytics', ['track'])
             window.course_location_analytics = jasmine.createSpy()

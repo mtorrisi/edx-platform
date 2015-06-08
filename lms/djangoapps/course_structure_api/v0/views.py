@@ -1,5 +1,6 @@
 """ API implementation for course-oriented interactions. """
 
+from collections import namedtuple
 import json
 import logging
 
@@ -316,8 +317,9 @@ class CourseBlocksAndNavigation(ListAPIView):
         GET api/course_structure/v0/courses/{course_id}/blocks/
         GET api/course_structure/v0/courses/{course_id}/navigation/
         GET api/course_structure/v0/courses/{course_id}/blocks+navigation/
-           ?children=False&block_count=["video"]
-           &block_data={"video":{"profiles":["mobile_high","mobile_low"],"allow_cache_miss":"True"}}
+           &block_count=video
+           &block_json={"video":{"profiles":["mobile_low"]}}
+           &fields=graded,format,responsive_ui
 
     **Parameters**:
 
@@ -328,23 +330,12 @@ class CourseBlocksAndNavigation(ListAPIView):
 
         * block_count: (list) Indicates for which block types to return the aggregate count of the blocks.
 
-          Example: block_count=["video"]
+          Example: block_count="video,problem"
 
-        * graded: (boolean) Indicates whether or not to return (both individual and aggregate) graded information
-          about the blocks.
-          Default is True.
+        * fields: (list) Indicates which additional fields to return for each block.
+          Default is "children,graded,format,responsive_ui"
 
-          Example: graded=True or graded=true
-
-        * responsive_ui: (boolean) Indicates whether to return whether the block has responsive UI support.
-          Default is True.
-
-          Example: responsive_ui=True or responsive_ui=true
-
-        * children: (boolean) Indicates whether or not to return children information about the blocks.
-          Default is True.
-
-          Example: children=True or children=true
+          Example: fields=graded,format,responsive_ui
 
         * navigation_depth (integer) Indicates how far deep to traverse into the course hierarchy before bundling
           all the descendants.
@@ -366,19 +357,6 @@ class CourseBlocksAndNavigation(ListAPIView):
 
           * display_name: (string) The display name of the block.
 
-          * graded: (boolean) Whether or not the block is graded.
-            Returned only if the graded input parameter is True.
-
-          * graded_descendant (boolean) Whether or not the block or any of its descendants is graded.
-            Returned only if the "graded" input parameter is True.
-
-          * format: (string) The assignment type of the block.
-            Possible values can be "Homework", "Lab", "Midterm Exam", and "Final Exam".
-            Returned only if the "graded" input parameter is True.
-
-          * responsive_ui: (boolean) Whether or not the block's rendering obtained via block_url is responsive.
-            Returned only if the "responsive_ui" input parameter is True.
-
           * children: (list) If the block has child blocks, a list of IDs of the child blocks.
             Returned only if the "children" input parameter is True.
 
@@ -396,6 +374,16 @@ class CourseBlocksAndNavigation(ListAPIView):
           * web_url: (string) The URL to the website location of this block.  This URL can be used as a further
             fallback if the block_url and the block_json is not supported.
 
+          * graded (boolean) Whether or not the block or any of its descendants is graded.
+            Returned only if "graded" is included in the "fields" parameter.
+
+          * format: (string) The assignment type of the block.
+            Possible values can be "Homework", "Lab", "Midterm Exam", and "Final Exam".
+            Returned only if "format" is included in the "fields" parameter.
+
+          * responsive_ui: (boolean) Whether or not the block's rendering obtained via block_url is responsive.
+            Returned only if "responsive_ui" is included in the "fields" parameter.
+
         * navigation: A dictionary that maps block IDs to a collection of navigation information about each block.
           Each block contains the following fields.
 
@@ -406,37 +394,39 @@ class CourseBlocksAndNavigation(ListAPIView):
         * blocks_navigation: A dictionary that combines both the blocks and navigation data.
 
     """
+    DEFAULT_FIELDS = "children,graded,format,responsive_ui"
+    BlockApiField = namedtuple('BlockApiField', 'block_field_name api_field_default')
+    FIELD_MAP = {
+        'graded': BlockApiField(block_field_name='graded', api_field_default=False),
+        'format': BlockApiField(block_field_name='format', api_field_default=None),
+        'responsive_ui': BlockApiField(block_field_name='has_responsive_ui', api_field_default=False),
+    }
+
     @view_course_access(depth=None)
     def list(self, request, course, return_blocks=True, return_nav=True, *args, **kwargs):
 
-        def json_field_requested(param_name, param_type, default_value):
-            """
-            Returns the JSON-parsed parameter value of the request's GET parameter of name, param_name.
-            If the parameter isn't specified in the request, returns the JSON parsing of the default_value.
-            """
-            field_requested = json.loads(request.GET.get(param_name, default_value))
-            if field_requested and not isinstance(field_requested, param_type):
-                raise ParseError
-            return field_requested
-
-        def bool_field_requested(param_name, default_value="true"):
-            """
-            Returns the boolean-parsed value of the request's GET parameter of name, param_name.
-            If the parameter isn't specified in the request, returns the parsing of the default_value.
-            The value is treated as True iff it's lowercase value is equal to "true".
-            """
-            field_requested = request.GET.get(param_name, default_value)
-            if field_requested and not isinstance(field_requested, basestring):
-                raise ParseError
-            return field_requested.lower() == "true"
-
         # check what fields are requested
-        block_json_requested = json_field_requested('block_json', dict, "{}")
-        block_count_requested = json_field_requested('block_count', list, "[]")
-        graded_requested = bool_field_requested('graded')
-        responsive_ui_requested = bool_field_requested('responsive_ui')
-        children_requested = bool_field_requested('children')
-        navigation_depth_requested = int(request.GET.get('navigation_depth', '3'))
+        try:
+            # fields
+            fields_requested = set(request.GET.get('fields', self.DEFAULT_FIELDS).split(","))
+
+            # children
+            children_requested = 'children' in fields_requested
+            fields_requested.discard('children')
+
+            # block_count
+            block_count_requested = request.GET.get('block_count', "")
+            block_count_requested = block_count_requested.split(",") if block_count_requested else []
+
+            # navigation_depth
+            navigation_depth_requested = int(request.GET.get('navigation_depth', '3'))
+
+            # block_json
+            block_json_requested = json.loads(request.GET.get('block_json', "{}"))
+            if block_json_requested and not isinstance(block_json_requested, dict):
+                raise ParseError
+        except:
+            raise ParseError
 
         # prepare the response
         response = {}
@@ -498,7 +488,7 @@ class CourseBlocksAndNavigation(ListAPIView):
             #      [] - if this block's hide_from_toc is True.
             #      descendants_of_parent - if this block's depth is greater than the requested navigation_depth.
             #      navigation[block.location]["descendants"] - if this block's depth is within the requested navigation
-            #        depth and so it's descendants can be added to this block's descendants value.
+            #        depth and so its descendants can be added to this block's descendants value.
 
             descendants_of_self = []
             # Blocks with the 'hide_from_toc' setting are accessible, just not navigatable from the table-of-contents.
@@ -522,34 +512,11 @@ class CourseBlocksAndNavigation(ListAPIView):
             children = []
             if block.has_children:
                 # Recursively call the function for each of the children, while supporting dynamic children.
-                children = get_dynamic_descriptor_children(block, descriptor_is_module=True)
+                children = get_dynamic_descriptor_children(block)
                 for child in children:
                     recurse_blocks_nav(child, block_depth + 1, descendants_of_self)
                 if children_requested:
                     block_value["children"] = [unicode(child.location) for child in children]
-
-            # graded
-            # If graded information is requested, include both
-            # (1) whether this block is graded and
-            # (2) whether this block or any of the block's descendants is graded.
-            if graded_requested:
-                block_value["graded"] = block.graded
-                block_value["graded_descendant"] = (
-                    block.graded or
-                    any(
-                        blocks.get(unicode(child.location), {}).get("graded_descendant", False)
-                        for child in children
-                    )
-                )
-                block_value["format"] = getattr(block, 'format', None)
-
-            # responsive UI
-            # If responsive UI information is requested, include whether this block is tagged with having
-            # responsive UI support.
-            if responsive_ui_requested:
-                block_value["responsive_ui"] = (
-                    block.has_responsive_ui if hasattr(block, 'has_responsive_ui') else False
-                )
 
             # block count
             # For all the block types that are requested to be counted, include the count of
@@ -563,14 +530,22 @@ class CourseBlocksAndNavigation(ListAPIView):
                     (1 if b_type == block_type else 0)
                 )
 
-            # block data
+            # block JSON data
             # If the data for this block's type is requested, and the block supports the 'student_view_json' method,
             # add the response from the 'student_view_json" method as the data for the block.
-            # TODO Call student_view_json instead, but the block is a descriptor instead of the module.
             if block_type in block_json_requested:
-                if getattr(block, 'get_json', None):
-                    block_value["data"] = block.get_json(
+                if getattr(block, 'student_view_json', None):
+                    block_value["block_json"] = block.student_view_json(
                         context=block_json_requested[block_type]
+                    )
+
+            # additional fields
+            for field_name in fields_requested:
+                if field_name in self.FIELD_MAP:
+                    block_value[field_name] = getattr(
+                        block,
+                        self.FIELD_MAP[field_name].block_field_name,
+                        self.FIELD_MAP[field_name].api_field_default,
                     )
 
         # start the recursion with the course at block_depth 0

@@ -17,13 +17,14 @@ def yield_dynamic_descriptor_descendents(descriptor, module_creator):  # pylint:
         yield next_descriptor
 
 
-def get_dynamic_descriptor_children(descriptor, module_creator=None, usage_key_filter=None, descriptor_is_module=False):
+def get_dynamic_descriptor_children(descriptor, module_creator=None, usage_key_filter=None):
     """
     Returns the children of the given descriptor, while supporting descriptors with dynamic children.
     """
     module_children = []
     if descriptor.has_dynamic_children():
-        module = descriptor if descriptor_is_module else module_creator(descriptor)
+        # do not rebind the module if it's already bound to a user.
+        module = descriptor if descriptor.scope_ids.user_id else module_creator(descriptor)
         if module is not None:
             module_children = module.get_child_descriptors()
     else:

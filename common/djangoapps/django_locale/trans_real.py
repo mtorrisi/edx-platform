@@ -69,17 +69,14 @@ def get_supported_language_variant(lang_code, strict=False):
         possible_lang_codes.append(generic_lang_code)
         supported_lang_codes = dict(settings.LANGUAGES)
 
-        print "Get supported lang variant; possible lang codes:", possible_lang_codes
         for code in possible_lang_codes:
             # Note: django 1.4 implementation of check_for_language is OK to use
             if code in supported_lang_codes and translation.check_for_language(code):
-                print 'returning code:', code
                 return code
         if not strict:
             # if fr-fr is not supported, try fr-ca.
             for supported_code in supported_lang_codes:
                 if supported_code.startswith(generic_lang_code + '-'):
-                    print 'returning supported code:', supported_code
                     return supported_code
     raise LookupError(lang_code)
 
@@ -115,7 +112,6 @@ def get_language_from_request(request, check_path=False):
         pass
 
     accept = request.META.get('HTTP_ACCEPT_LANGUAGE', '')
-    print 'Getting accept header langs:', accept
     # broken in 1.4, so defined above
     for accept_lang, unused in parse_accept_lang_header(accept):
         if accept_lang == '*':

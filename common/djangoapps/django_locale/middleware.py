@@ -1,5 +1,5 @@
 # TODO: This file is imported from the stable Django 1.8 branch. Remove this file
-# and re-import this middleware from Django once the codebase is upgraded.
+# and re-import this middleware from Django once the codebase is upgraded. [PLAT-671]
 # pylint: disable=invalid-name, missing-docstring
 "This is the locale selecting middleware that will look at accept headers"
 

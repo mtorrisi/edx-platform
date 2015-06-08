@@ -11,7 +11,7 @@ from opaque_keys.edx.keys import UsageKey
 from opaque_keys.edx.locator import CourseLocator, BlockUsageLocator
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
+from xmodule.modulestore.tests.factories import check_mongo_calls, CourseFactory, ItemFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from student.tests.factories import AdminFactory, UserFactory
@@ -66,6 +66,10 @@ class BookmarksTestsBase(ModuleStoreTestCase):
             )
             self.vertical_3 = ItemFactory.create(
                 parent_location=self.sequential_2.location, category='vertical', display_name='Subsection 3'
+            )
+
+            self.html_1 = ItemFactory.create(
+                parent_location=self.vertical_2.location, category='html', display_name='Details 1'
             )
 
         self.path = [
@@ -123,6 +127,31 @@ class BookmarksTestsBase(ModuleStoreTestCase):
                 'usage_key': self.other_vertical_1.location,
             }),
         )
+
+    def create_course_with_blocks(self, children_per_block=1, depth=1, store_type=ModuleStoreEnum.Type.mongo):
+        """
+        Create a course and add blocks.
+        """
+        with self.store.default_store(store_type):
+
+            course = CourseFactory.create()
+            display_name = 0
+
+            with self.store.bulk_operations(course.id):
+                blocks_at_next_level = [course]
+
+                for level in range(depth):
+                    blocks_at_current_level = blocks_at_next_level
+                    blocks_at_next_level = []
+
+                    for block in blocks_at_current_level:
+                        for __ in range(children_per_block):
+                            blocks_at_next_level += [ItemFactory.create(
+                                parent_location=block.scope_ids.usage_id, display_name=unicode(display_name)
+                            )]
+                            display_name += 1
+
+        return course
 
     def create_course_with_bookmarks_count(self, count, store_type=ModuleStoreEnum.Type.mongo):
         """
@@ -249,14 +278,15 @@ class BookmarkModelTests(BookmarksTestsBase):
         self.assertEqual(mock_get_path.call_count, get_path_call_count)
 
     @ddt.data(
-        ('course', []),
-        ('chapter_1', []),
-        ('sequential_1', ['chapter_1']),
-        ('vertical_1', ['chapter_1', 'sequential_1']),
-        ('other_vertical_1', ['other_chapter_1', 'other_sequential_2']),  # Has two ancestors
+        ('course', [], 5),
+        ('chapter_1', [], 4),
+        ('sequential_1', ['chapter_1'], 6),
+        ('vertical_1', ['chapter_1', 'sequential_1'], 8),
+        ('html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 10),
+        ('other_vertical_1', ['other_chapter_1', 'other_sequential_1'], 4),  # Has two ancestors
     )
     @ddt.unpack
-    def test_get_path(self, block_to_bookmark, ancestors_attrs):
+    def test_get_path(self, block_to_bookmark, ancestors_attrs, expected_mongo_calls):
 
         user = UserFactory.create()
 
@@ -266,11 +296,48 @@ class BookmarkModelTests(BookmarksTestsBase):
 
         bookmark_data = self.get_bookmark_data(getattr(self, block_to_bookmark), user=user)
         XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
-        bookmark = Bookmark.create(bookmark_data)
+
+        with check_mongo_calls(expected_mongo_calls):
+            bookmark = Bookmark.create(bookmark_data)
 
         self.assertEqual(bookmark.path, expected_path)
         self.assertIsNotNone(bookmark.xblock_cache)
         self.assertEqual(bookmark.xblock_cache.paths, [])
+
+    @ddt.data(
+        (ModuleStoreEnum.Type.mongo, 2, 2, 2),
+        (ModuleStoreEnum.Type.mongo, 4, 2, 2),
+        (ModuleStoreEnum.Type.mongo, 6, 2, 2),
+        (ModuleStoreEnum.Type.mongo, 2, 3, 3),
+        (ModuleStoreEnum.Type.mongo, 4, 3, 3),
+        (ModuleStoreEnum.Type.mongo, 6, 3, 3),
+        (ModuleStoreEnum.Type.mongo, 2, 4, 4),
+        (ModuleStoreEnum.Type.mongo, 4, 4, 4),
+        (ModuleStoreEnum.Type.mongo, 6, 4, 4),
+        (ModuleStoreEnum.Type.split, 2, 2, 2),
+        (ModuleStoreEnum.Type.split, 4, 2, 2),
+        (ModuleStoreEnum.Type.split, 6, 2, 2),
+        (ModuleStoreEnum.Type.split, 2, 3, 3),
+        (ModuleStoreEnum.Type.split, 4, 3, 3),
+        (ModuleStoreEnum.Type.split, 6, 3, 3),
+        (ModuleStoreEnum.Type.split, 2, 4, 4),
+        (ModuleStoreEnum.Type.split, 4, 4, 4),
+        (ModuleStoreEnum.Type.split, 6, 4, 4),
+    )
+    @ddt.unpack
+    def test_get_path_queries(self, store_type, children_per_block, depth, expected_mongo_calls):
+
+        course = self.create_course_with_blocks(children_per_block, depth, store_type)
+
+        # Find a leaf block.
+        block = modulestore().get_course(course.id, depth=None)
+        for level in range(depth-1):
+            children = block.get_children()
+            block = children[-1]
+
+        with check_mongo_calls(expected_mongo_calls):
+            path = Bookmark.get_path(block.location)
+            self.assertEqual(len(path), depth-2)
 
     def test_get_path_in_case_of_exceptions(self):
 

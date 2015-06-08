@@ -3,8 +3,9 @@ Tests for tasks.
 """
 import ddt
 
+from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
+from xmodule.modulestore.tests.factories import check_mongo_calls, CourseFactory, ItemFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from student.tests.factories import AdminFactory
@@ -100,6 +101,35 @@ class XBlockCacheTaskTests(BookmarksTestsBase):
                 ],
             ],
         }
+
+    @ddt.data(
+        (ModuleStoreEnum.Type.mongo, 2, 2, 3),
+        (ModuleStoreEnum.Type.mongo, 4, 2, 3),
+        (ModuleStoreEnum.Type.mongo, 6, 2, 3),
+        (ModuleStoreEnum.Type.mongo, 2, 3, 4),
+        (ModuleStoreEnum.Type.mongo, 4, 3, 4),
+        (ModuleStoreEnum.Type.mongo, 6, 3, 5),
+        (ModuleStoreEnum.Type.mongo, 2, 4, 5),
+        (ModuleStoreEnum.Type.mongo, 4, 4, 6),
+        (ModuleStoreEnum.Type.mongo, 6, 4, 7),
+        (ModuleStoreEnum.Type.split, 2, 2, 3),
+        (ModuleStoreEnum.Type.split, 4, 2, 3),
+        (ModuleStoreEnum.Type.split, 6, 2, 3),
+        (ModuleStoreEnum.Type.split, 2, 3, 3),
+        (ModuleStoreEnum.Type.split, 4, 3, 3),
+        (ModuleStoreEnum.Type.split, 6, 3, 3),
+        (ModuleStoreEnum.Type.split, 2, 4, 3),
+        (ModuleStoreEnum.Type.split, 4, 4, 3),
+        (ModuleStoreEnum.Type.split, 6, 4, 3),
+    )
+    @ddt.unpack
+    def test_calculate_course_xblocks_data_queries(self, store_type, children_per_block, depth, expected_mongo_calls):
+
+        course = self.create_course_with_blocks(children_per_block, depth, store_type)
+
+        with check_mongo_calls(expected_mongo_calls):
+            blocks_data = _calculate_course_xblocks_data(course.id)
+            self.assertGreater(len(blocks_data), children_per_block ** depth)
 
     @ddt.data(
         ('course',),

@@ -394,176 +394,257 @@ class CourseBlocksAndNavigation(ListAPIView):
         * blocks_navigation: A dictionary that combines both the blocks and navigation data.
 
     """
-    DEFAULT_FIELDS = "children,graded,format,responsive_ui"
+    class RequestInfo(object):
+        """
+        A class for encapsulating the request information, including what optional fields are requested.
+        """
+        DEFAULT_FIELDS = "children,graded,format,responsive_ui"
+
+        def __init__(self, request, course):
+            self.request = request
+            self.course = course
+            self.field_data_cache = None
+
+            # check what fields are requested
+            try:
+                # fields
+                self.fields = set(request.GET.get('fields', self.DEFAULT_FIELDS).split(","))
+
+                # children
+                self.children = 'children' in self.fields
+                self.fields.discard('children')
+
+                # block_count
+                self.block_count = request.GET.get('block_count', "")
+                self.block_count = (
+                    self.block_count.split(",") if self.block_count else []
+                )
+
+                # navigation_depth
+                self.navigation_depth = int(request.GET.get('navigation_depth', '3'))
+
+                # block_json
+                self.block_json = json.loads(request.GET.get('block_json', "{}"))
+                if self.block_json and not isinstance(self.block_json, dict):
+                    raise ParseError
+            except:
+                raise ParseError
+
+    class ResultInfo(object):
+        """
+        A class for encapsulating the result information, specifically the blocks and navigation data.
+        """
+        def __init__(self, return_blocks, return_nav):
+            self.blocks = {}
+            self.navigation = {}
+            if return_blocks and return_nav:
+                self.navigation = self.blocks
+
+        def update_response(self, response, return_blocks, return_nav):
+            """
+            Updates the response object with result information.
+            """
+            if return_blocks and return_nav:
+                response["blocks+navigation"] = self.blocks
+            elif return_blocks:
+                response["blocks"] = self.blocks
+            elif return_nav:
+                response["navigation"] = self.navigation
+
+    class BlockInfo(object):
+        """
+        A class for encapsulating a block's information as needed during traversal of a block hierarcy.
+        """
+        def __init__(self, block, parent_block_info=None):
+            # the block for which the recursion is being computed
+            self.block = block
+
+            # the type of the block
+            self.type = block.category
+
+            # the block's depth in the block hierarchy
+            self.depth = 0
+
+            # the block's data to include in the response
+            self.value = None
+
+            # descendants_of_parent: the list of descendants for this block's parent
+            self.descendants_of_parent = []
+            self.descendants_of_self = []
+
+            # if a parent block was provided, update this block's data based on the parent's data
+            if parent_block_info:
+                self.depth = parent_block_info.depth + 1
+                self.descendants_of_parent = parent_block_info.descendants_of_self
+
+    @view_course_access(depth=None)
+    def list(self, request, course, return_blocks=True, return_nav=True, *args, **kwargs):
+        """
+        REST API endpoint for listing all the blocks and/or navigation information in the course,
+        while regarding user access and roles.
+        """
+        # set starting point
+        start_block = course
+
+        # initialize request and result objects
+        request_info = self.RequestInfo(request, course)
+        result_info = self.ResultInfo(return_blocks, return_nav)
+
+        # create and populate a field data cache by pre-fetching for the course (with depth=None)
+        request_info.field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
+            course.id, request.user, course, depth=None,
+        )
+
+        # start the recursion with the start_block
+        self.recurse_blocks_nav(request_info, result_info, self.BlockInfo(start_block))
+
+        # return response
+        response = {"root": unicode(start_block.location)}
+        result_info.update_response(response, return_blocks, return_nav)
+        return Response(response)
+
+    def recurse_blocks_nav(self, request_info, result_info, block_info):
+        """
+        A depth-first recursive function that supports calculation of both the list of blocks in the course
+        and the navigation information up to requested navigation_depth of the course.
+
+        Arguments:
+        """
+        # bind user data to the block
+        block_info.block = get_module_for_descriptor(
+            request_info.request.user,
+            request_info.request,
+            block_info.block,
+            request_info.field_data_cache,
+            request_info.course.id
+        )
+
+        # verify the user has access to this block
+        if not has_access(request_info.request.user, 'load', block_info.block, course_key=request_info.course.id):
+            return
+
+        # set basic information about the block
+        self.set_block_value(request_info, result_info, block_info)
+
+        # descendants
+        self.update_descendants(request_info, result_info, block_info)
+
+        # children: recursively call the function for each of the children, while supporting dynamic children.
+        children = []
+        if block_info.block.has_children:
+            children = get_dynamic_descriptor_children(block_info.block)
+            for child in children:
+                self.recurse_blocks_nav(request_info, result_info, self.BlockInfo(child, block_info))
+            if request_info.children:
+                block_info.value["children"] = [unicode(child.location) for child in children]
+
+        # block count
+        self.update_block_count(children, request_info, result_info, block_info)
+
+        # block JSON data
+        self.add_block_json(request_info, block_info)
+
+        # additional fields
+        self.add_additional_fields(request_info, block_info)
+
+    def set_block_value(self, request_info, result_info, block_info):
+        """
+        Sets the basic values for the current block in the recursion.
+        """
+        block_info.value = {
+            "id": unicode(block_info.block.location),
+            "type": block_info.type,
+            "display_name": block_info.block.display_name,
+            "web_url": reverse(
+                "jump_to",
+                kwargs={"course_id": unicode(request_info.course.id), "location": unicode(block_info.block.location)},
+                request=request_info.request,
+            ),
+            "block_url": reverse(
+                "courseware.views.render_xblock",
+                kwargs={"usage_key_string": unicode(block_info.block.location)},
+                request=request_info.request,
+            ),
+        }
+        result_info.blocks[unicode(block_info.block.location)] = block_info.value
+
+    def update_descendants(self, request_info, result_info, block_info):
+        """
+        Updates the descendants data for the current block.
+
+        The current block is added to its parent's descendants if it is visible in the navigation
+        (i.e., the 'hide_from_toc' setting is False).
+
+        Additionally, the block's depth is compared with the navigation_depth parameter to determine whether the
+        descendants of the block should be added to its own descendants (if block.depth <= navigation_depth)
+        or to the descendants of the block's parents (if block.depth > navigation_depth).
+
+        block_info.descendants_of_self is the list of descendants that is passed to this block's children.
+        It should be either:
+            descendants_of_parent - if this block's depth is greater than the requested navigation_depth.
+            a dangling [] - if this block's hide_from_toc is True.
+            a referenced [] in navigation[block.location]["descendants"] - if this block's depth is within
+               the requested navigation depth.
+        """
+        # Blocks with the 'hide_from_toc' setting are accessible, just not navigatable from the table-of-contents.
+        # If the 'hide_from_toc' setting is set on the block, do not add this block to the parent's descendants
+        # list and let the block's descendants add themselves to a dangling (unreferenced) descendants list.
+        if not block_info.block.hide_from_toc:
+            # add this block to the parent's descendants
+            block_info.descendants_of_parent.append(unicode(block_info.block.location))
+
+            # if this block's depth in the hierarchy is greater than the requested navigation depth,
+            # have the block's descendants add themselves to the parent's descendants.
+            if block_info.depth > request_info.navigation_depth:
+                block_info.descendants_of_self = block_info.descendants_of_parent
+
+            # otherwise, have the block's descendants add themselves to this block's descendants by
+            # referencing/attaching descendants_of_self from this block's navigation value.
+            else:
+                result_info.navigation.setdefault(
+                    unicode(block_info.block.location), {}
+                )["descendants"] = block_info.descendants_of_self
+
+    def update_block_count(self, children, request_info, result_info, block_info):
+        """
+        For all the block types that are requested to be counted, include the count of that block type as
+        aggregated from the block's descendants.
+        """
+        for b_type in request_info.block_count:
+            block_info.value.setdefault("block_count", {})[b_type] = (
+                sum(
+                    result_info.blocks.get(unicode(child.location), {}).get("block_count", {}).get(b_type, 0)
+                    for child in children
+                ) +
+                (1 if b_type == block_info.type else 0)
+            )
+
+    def add_block_json(self, request_info, block_info):
+        """
+        If the JSON data for this block's type is requested, and the block supports the 'student_view_json'
+        method, add the response from the 'student_view_json" method as the data for the block.
+        """
+        if block_info.type in request_info.block_json:
+            if getattr(block_info.block, 'student_view_json', None):
+                block_info.value["block_json"] = block_info.block.student_view_json(
+                    context=request_info.block_json[block_info.type]
+                )
+
+    # A mapping of API-exposed field names to xBlock field names and API field defaults.
     BlockApiField = namedtuple('BlockApiField', 'block_field_name api_field_default')
     FIELD_MAP = {
         'graded': BlockApiField(block_field_name='graded', api_field_default=False),
         'format': BlockApiField(block_field_name='format', api_field_default=None),
         'responsive_ui': BlockApiField(block_field_name='has_responsive_ui', api_field_default=False),
     }
-
-    @view_course_access(depth=None)
-    def list(self, request, course, return_blocks=True, return_nav=True, *args, **kwargs):
-
-        # check what fields are requested
-        try:
-            # fields
-            fields_requested = set(request.GET.get('fields', self.DEFAULT_FIELDS).split(","))
-
-            # children
-            children_requested = 'children' in fields_requested
-            fields_requested.discard('children')
-
-            # block_count
-            block_count_requested = request.GET.get('block_count', "")
-            block_count_requested = block_count_requested.split(",") if block_count_requested else []
-
-            # navigation_depth
-            navigation_depth_requested = int(request.GET.get('navigation_depth', '3'))
-
-            # block_json
-            block_json_requested = json.loads(request.GET.get('block_json', "{}"))
-            if block_json_requested and not isinstance(block_json_requested, dict):
-                raise ParseError
-        except:
-            raise ParseError
-
-        # prepare the response
-        response = {}
-        blocks = {}
-        navigation = {}
-        if return_blocks and return_nav:
-            navigation = blocks
-            response["blocks+navigation"] = blocks
-        elif return_blocks:
-            response["blocks"] = blocks
-        elif return_nav:
-            response["navigation"] = navigation
-
-        def recurse_blocks_nav(block, block_depth, descendants_of_parent):
-            """
-            A depth-first recursive function that supports calculation of both the list of blocks in the course
-            and the navigation information upto block_depth of the course.
-
-            Arguments:
-              block: the block for which the recursion is being computed.
-
-              block_depth: the block's depth in the course hierarchy.  It is compared with the
-                navigation_depth_requested parameter to determine whether the descendants of the block should
-                be appended to the descendants of the block (if block_depth <= navigation_depth_requested) or
-                to the given descendants of the block's parents (if block_depth > navigation_depth_requested).
-
-              descendants_of_parent: the list of descendants for this block's parent.
-            """
-            block_type = block.category
-            block = create_module(block, course.id, request)
-
-            # verify the user has access to this block
-            if not has_access(self.request.user, 'load', block, course_key=course.id):
-                return
-
-            # set basic field values for the block
-            block_value = {
-                "id": unicode(block.location),
-                "type": block_type,
-                "display_name": block.display_name,
-                "web_url": reverse(
-                    "jump_to",
-                    kwargs={"course_id": unicode(course.id), "location": unicode(block.location)},
-                    request=request,
-                ),
-                "block_url": reverse(
-                    "courseware.views.render_xblock",
-                    kwargs={"usage_key_string": unicode(block.location)},
-                    request=request,
-                ),
-            }
-            blocks[unicode(block.location)] = block_value
-
-            # descendants
-            # descendants_of_parent contains the descendants of this block's parents and should be
-            #   updated with this block if this block is visible in the navigation (i.e., hide_from_toc is False).
-            # descendants_of_self is the list of descendants that is passed to this block's children.
-            #   It should be either:
-            #      [] - if this block's hide_from_toc is True.
-            #      descendants_of_parent - if this block's depth is greater than the requested navigation_depth.
-            #      navigation[block.location]["descendants"] - if this block's depth is within the requested navigation
-            #        depth and so its descendants can be added to this block's descendants value.
-
-            descendants_of_self = []
-            # Blocks with the 'hide_from_toc' setting are accessible, just not navigatable from the table-of-contents.
-            # If the 'hide_from_toc' setting is set on the block, do not add this block to the parent's descendants
-            # list and let the block's descendants add themselves to a dangling (unreferenced) descendants list.
-            if not block.hide_from_toc:
-                # add this block to the parent's descendants
-                descendants_of_parent.append(unicode(block.location))
-
-                # if this block's depth in the hierarchy is greater than the requested navigation depth,
-                # have the block's descendants add themselves to the parent's descendants.
-                if block_depth > navigation_depth_requested:
-                    descendants_of_self = descendants_of_parent
-
-                # otherwise, have the block's descendants add themselves to this block's descendants by
-                # referencing/attaching descendants_of_self from this block's navigation value.
-                else:
-                    navigation.setdefault(unicode(block.location), {})["descendants"] = descendants_of_self
-
-            # children
-            children = []
-            if block.has_children:
-                # Recursively call the function for each of the children, while supporting dynamic children.
-                children = get_dynamic_descriptor_children(block)
-                for child in children:
-                    recurse_blocks_nav(child, block_depth + 1, descendants_of_self)
-                if children_requested:
-                    block_value["children"] = [unicode(child.location) for child in children]
-
-            # block count
-            # For all the block types that are requested to be counted, include the count of
-            # that block type as aggregated from the block's descendants.
-            for b_type in block_count_requested:
-                block_value.setdefault("block_count", {})[b_type] = (
-                    sum(
-                        blocks.get(unicode(child.location), {}).get("block_count", {}).get(b_type, 0)
-                        for child in children
-                    ) +
-                    (1 if b_type == block_type else 0)
+    def add_additional_fields(self, request_info, block_info):
+        """
+        Add additional field names and values of the block as requested in the request_info.
+        """
+        for field_name in request_info.fields:
+            if field_name in self.FIELD_MAP:
+                block_info.value[field_name] = getattr(
+                    block_info.block,
+                    self.FIELD_MAP[field_name].block_field_name,
+                    self.FIELD_MAP[field_name].api_field_default,
                 )
-
-            # block JSON data
-            # If the data for this block's type is requested, and the block supports the 'student_view_json' method,
-            # add the response from the 'student_view_json" method as the data for the block.
-            if block_type in block_json_requested:
-                if getattr(block, 'student_view_json', None):
-                    block_value["block_json"] = block.student_view_json(
-                        context=block_json_requested[block_type]
-                    )
-
-            # additional fields
-            for field_name in fields_requested:
-                if field_name in self.FIELD_MAP:
-                    block_value[field_name] = getattr(
-                        block,
-                        self.FIELD_MAP[field_name].block_field_name,
-                        self.FIELD_MAP[field_name].api_field_default,
-                    )
-
-        # start the recursion with the course at block_depth 0
-        start_block = course
-        response["root"] = unicode(start_block.location)
-        recurse_blocks_nav(start_block, block_depth=0, descendants_of_parent=[])
-
-        # return response
-        return Response(response)
-
-
-def create_module(descriptor, course_id, request):
-    """
-    Factory method for creating and binding a module for the given descriptor.
-    """
-    field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
-        course_id, request.user, descriptor, depth=0,
-    )
-    return get_module_for_descriptor(
-        request.user, request, descriptor, field_data_cache, course_id
-    )

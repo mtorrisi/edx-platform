@@ -20,6 +20,7 @@ from openedx.core.djangoapps.credit.models import (
     CreditRequirement,
     CreditRequirementStatus,
     CreditEligibility,
+    CreditRequest,
 )
 
 
@@ -166,13 +167,42 @@ class CreditProviderViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_credit_provider_callback_validates_signature(self):
-        self.fail("TODO")
+        response = self._create_credit_request(self.USERNAME, self.COURSE_KEY)
+        self.assertEqual(response.status_code, 200)
+        request_uuid = json.loads(response.content)["parameters"]["request_uuid"]
+
+        # Simulate a callback from the credit provider with an invalid signature
+        # Since the signature is invalid, we respond with a 403 Not Authorized.
+        response = self._credit_provider_callback(request_uuid, "approved", sig="invalid")
+        self.assertEqual(response.status_code, 403)
 
     def test_credit_provider_callback_validates_timestamp(self):
-        self.fail("TODO")
+        response = self._create_credit_request(self.USERNAME, self.COURSE_KEY)
+        self.assertEqual(response.status_code, 200)
+        request_uuid = json.loads(response.content)["parameters"]["request_uuid"]
+
+        # Simulate a callback from the credit provider with a timestamp too far in the past
+        # (slightly more than 15 minutes)
+        # Since the message isn't timely, respond with a 403.
+        timestamp = datetime.datetime.now(pytz.UTC) - datetime.timedelta(0, 60 * 15 + 1)
+        response = self._credit_provider_callback(request_uuid, "approved", timestamp=timestamp.isoformat())
+        self.assertEqual(response.status_code, 403)
 
     def test_credit_provider_callback_is_idempotent(self):
-        self.fail("TODO")
+        response = self._create_credit_request(self.USERNAME, self.COURSE_KEY)
+        self.assertEqual(response.status_code, 200)
+        request_uuid = json.loads(response.content)["parameters"]["request_uuid"]
+
+        # Initially, the status should be "pending"
+        self._assert_request_status(request_uuid, "pending")
+
+        # First call sets the status to approved
+        self._credit_provider_callback(request_uuid, "approved")
+        self._assert_request_status(request_uuid, "approved")
+
+        # Second call succeeds as well; status is still approved
+        self._credit_provider_callback(request_uuid, "approved")
+        self._assert_request_status(request_uuid, "approved")
 
     @ddt.data(
         # Invalid JSON
@@ -186,6 +216,9 @@ class CreditProviderViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_credit_provider_key_not_configured(self):
+        self.fail("TODO")
+
+    def test_request_associated_with_another_provider(self):
         self.fail("TODO")
 
     def _create_credit_request(self, username, course_key):
@@ -202,19 +235,32 @@ class CreditProviderViewTests(TestCase):
             content_type="application/json",
         )
 
-    def _credit_provider_callback(self, request_uuid, status):
+    def _credit_provider_callback(self, request_uuid, status, timestamp=None, sig=None):
         """
         Simulate a response from the credit provider approving
         or rejecting the credit request.
         """
         url = reverse("credit_provider_callback", args=[self.PROVIDER_ID])
-        return self.client.post(
-            url,
-            data=json.dumps({
-                "request_uuid": request_uuid,
-                "status": status,
-                "timestamp": datetime.datetime.now(pytz.UTC).isoformat(),
-                "signature": "TODO"
-            }),
-            content_type="application/json",
-        )
+
+        if timestamp is None:
+            timestamp = datetime.datetime.now(pytz.UTC).isoformat()
+
+        parameters = {
+            "request_uuid": request_uuid,
+            "status": status,
+            "timestamp": timestamp,
+        }
+
+        if sig is None:
+            sig = signature(parameters, TEST_CREDIT_PROVIDER_SECRET_KEY)
+
+        parameters["signature"] = sig
+
+        return self.client.post(url, data=json.dumps(parameters), content_type="application/json")
+
+    def _assert_request_status(self, uuid, expected_status):
+        """
+        TODO
+        """
+        request = CreditRequest.objects.get(uuid=uuid)
+        self.assertEqual(request.status, expected_status)

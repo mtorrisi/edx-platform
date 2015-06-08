@@ -5,6 +5,11 @@ TODO: description of API contract with the credit provider.
 
 """
 import json
+import datetime
+import re
+
+import dateutil
+import pytz
 
 from django.http import (
     HttpResponse,
@@ -12,12 +17,14 @@ from django.http import (
     HttpResponseForbidden
 )
 from django.views.decorators.http import require_POST
+from django.conf import settings
 
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys import InvalidKeyError
 
 from util.json_request import JsonResponse
 from openedx.core.djangoapps.credit import api
+from openedx.core.djangoapps.credit.signature import signature
 
 
 @require_POST
@@ -181,8 +188,23 @@ def credit_provider_callback(request, provider_id):
     elif "signature" not in parameters:
         return HttpResponseBadRequest("TODO")
 
-    # TODO -- validate the signature
-    # TODO -- validate the timestamp
+    secret_key = getattr(settings, "CREDIT_PROVIDER_SECRET_KEYS", {}).get(provider_id)
+    if secret_key is None:
+        # TODO -- log this
+        return HttpResponseForbidden("TODO")
+
+    if signature(parameters, secret_key) != parameters["signature"]:
+        return HttpResponseForbidden("TODO")
+
+    # TODO -- explain this craziness
+    # In particular, why it's okay that dateutil might get wonky for (say) empty string input
+    try:
+        timestamp = dateutil.parser.parse(parameters["timestamp"])
+    except ValueError:
+        return HttpResponseBadRequest("TODO")
+
+    if (datetime.datetime.now(pytz.UTC) - timestamp).total_seconds() > 15 * 60:
+        return HttpResponseForbidden("TODO")
 
     try:
         api.update_credit_request_status(

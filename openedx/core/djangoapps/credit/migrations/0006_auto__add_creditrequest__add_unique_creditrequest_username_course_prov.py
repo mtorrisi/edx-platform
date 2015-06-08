@@ -45,26 +45,6 @@ class Migration(SchemaMigration):
         ))
         db.send_create_signal('credit', ['HistoricalCreditRequest'])
 
-        # Adding field 'CreditRequirement.display_name'
-        db.add_column('credit_creditrequirement', 'display_name',
-                      self.gf('django.db.models.fields.CharField')(default='', max_length=255),
-                      keep_default=False)
-
-        # Adding field 'CreditProvider.provider_url'
-        db.add_column('credit_creditprovider', 'provider_url',
-                      self.gf('django.db.models.fields.URLField')(default='', unique=True, max_length=255),
-                      keep_default=False)
-
-        # Adding field 'CreditProvider.eligibility_duration'
-        db.add_column('credit_creditprovider', 'eligibility_duration',
-                      self.gf('django.db.models.fields.PositiveIntegerField')(default=31556970),
-                      keep_default=False)
-
-        # Adding field 'CreditProvider.active'
-        db.add_column('credit_creditprovider', 'active',
-                      self.gf('django.db.models.fields.BooleanField')(default=True),
-                      keep_default=False)
-
         # Adding M2M table for field providers on 'CreditCourse'
         m2m_table_name = db.shorten_name('credit_creditcourse_providers')
         db.create_table(m2m_table_name, (
@@ -84,18 +64,6 @@ class Migration(SchemaMigration):
 
         # Deleting model 'HistoricalCreditRequest'
         db.delete_table('credit_historicalcreditrequest')
-
-        # Deleting field 'CreditRequirement.display_name'
-        db.delete_column('credit_creditrequirement', 'display_name')
-
-        # Deleting field 'CreditProvider.provider_url'
-        db.delete_column('credit_creditprovider', 'provider_url')
-
-        # Deleting field 'CreditProvider.eligibility_duration'
-        db.delete_column('credit_creditprovider', 'eligibility_duration')
-
-        # Deleting field 'CreditProvider.active'
-        db.delete_column('credit_creditprovider', 'active')
 
         # Removing M2M table for field providers on 'CreditCourse'
         db.delete_table(db.shorten_name('credit_creditcourse_providers'))

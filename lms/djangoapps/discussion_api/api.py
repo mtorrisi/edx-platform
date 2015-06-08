@@ -464,3 +464,27 @@ def delete_thread(request, thread_id):
         cc_thread.delete()
     else:
         raise PermissionDenied
+
+
+def delete_comment(request, comment_id):
+    """
+    Delete a comment.
+
+    Parameters:
+
+        request: The django request object used for build_absolute_uri and
+          determining the requesting user.
+
+        comment_id: The id for the comment to delete
+
+    Raises:
+
+        PermissionDenied: if user does not have permission to delete thread
+
+    """
+    cc_comment, context = _get_comment_and_context(request, comment_id)
+    # TODO Lets rebase when I merge my othe PR so I won't get this error things
+    # if _is_user_author_or_privileged(cc_thread, context):
+    cc_comment.delete()
+    # else:
+    #     raise PermissionDenied

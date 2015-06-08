@@ -6,7 +6,6 @@ TODO: description of API contract with the credit provider.
 """
 import json
 import datetime
-import re
 
 import dateutil
 import pytz
@@ -25,6 +24,9 @@ from opaque_keys import InvalidKeyError
 from util.json_request import JsonResponse
 from openedx.core.djangoapps.credit import api
 from openedx.core.djangoapps.credit.signature import signature
+from openedx.core.djangoapps.credit.exceptions import (
+    CreditProviderNotConfigured,
+)
 
 
 @require_POST
@@ -121,6 +123,8 @@ def create_credit_request(request, provider_id):
     # Initiate the request
     try:
         credit_request = api.create_credit_request(course_key, provider_id, username)
+    except CreditProviderNotConfigured:
+        return HttpResponseBadRequest("TODO")
     except:
         # TODO
         raise

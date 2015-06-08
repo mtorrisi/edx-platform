@@ -216,7 +216,21 @@ class CreditProviderViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_credit_provider_key_not_configured(self):
-        self.fail("TODO")
+        # Cannot initiate a request because we can't sign it
+        with override_settings(CREDIT_PROVIDER_SECRET_KEYS={}):
+            response = self._create_credit_request(self.USERNAME, self.COURSE_KEY)
+            self.assertEqual(response.status_code, 400)
+
+        # Create the request with the secret key configured
+        response = self._create_credit_request(self.USERNAME, self.COURSE_KEY)
+        self.assertEqual(response.status_code, 200)
+        request_uuid = json.loads(response.content)["parameters"]["request_uuid"]
+
+        # Callback from the provider is not authorized, because
+        # the shared secret isn't configured.
+        with override_settings(CREDIT_PROVIDER_SECRET_KEYS={}):
+            response = self._credit_provider_callback(request_uuid, "approved")
+            self.assertEqual(response.status_code, 403)
 
     def test_request_associated_with_another_provider(self):
         self.fail("TODO")

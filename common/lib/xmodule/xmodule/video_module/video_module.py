@@ -770,21 +770,24 @@ class VideoDescriptor(VideoFields, VideoTranscriptsMixin, VideoStudioViewHandler
             val_course_data = self.get_cached_val_data_for_course(video_profile_names, self.location.course_key)
             val_video_data = val_course_data.get(self.edx_video_id, {})
 
+            # Get the encoded videos if data from VAL is found
+            if val_video_data:
+                encoded_videos = val_video_data.get('profiles', {})
+
             # If information for this edx_video_id is not found in the bulk course data, make a
             # separate request for this individual edx_video_id, unless cache misses are disabled.
             # This is useful/required for videos that don't have a course designated, such as the introductory video
             # that is shared across many courses.  However, this results in a separate database request so watch
             # out for any performance hit if many such videos exist in a course.  Set the 'allow_cache_miss' parameter
             # to False to disable this fall back.
-            if not val_video_data and (context.get("allow_cache_miss", "True").lower() == "true"):
+            elif context.get("allow_cache_miss", "True").lower() == "true":
                 try:
                     val_video_data = edxval_api.get_video_info(self.edx_video_id)
+                    # Unfortunately, the VAL API is inconsistent in how it returns the encodings, so remap here.
+                    for enc_vid in val_video_data.pop('encoded_videos'):
+                        encoded_videos[enc_vid['profile']] = {key: enc_vid[key] for key in ["url", "file_size"]}
                 except edxval_api.ValVideoNotFoundError:
                     pass
-
-            # Get the encoded videos if data from VAL is found
-            if val_video_data:
-                encoded_videos = val_video_data.get('profiles', {})
 
         # Fall back to other video URLs in the video module if not found in VAL
         if not encoded_videos:

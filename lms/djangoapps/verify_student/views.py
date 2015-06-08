@@ -1033,7 +1033,7 @@ def results_callback(request):
         attempt.deny(json.dumps(reason), error_code=error_code)
         status = "denied"
         _set_requirement_status(
-            attempt, 'reverification', 'failed', {"failure_reason": "Verification Failed"}
+            attempt, 'reverification', 'failed', json.dumps(reason)
         )
     elif result == "SYSTEM FAIL":
         log.debug("System failure for %s -- resetting to must_retry", receipt_id)

@@ -94,6 +94,7 @@ class CourseAccessRoleForm(forms.ModelForm):
 
         return cleaned_data
 
+
 class CourseAccessRoleAdmin(admin.ModelAdmin):
     """Admin panel for the Course Access Role. """
     form = CourseAccessRoleForm

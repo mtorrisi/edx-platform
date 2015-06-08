@@ -52,7 +52,7 @@ class CourseAccessRoleForm(forms.ModelForm):
             org_name = course.display_org_with_default
             if org.lower() != org_name.lower():
                 raise forms.ValidationError(
-                    "Org name is not valid {}. Valid name is '{}'.".format(
+                    "Org name is not valid {}. Valid name is {}.".format(
                         org, org_name
                     )
                 )
@@ -72,7 +72,7 @@ class CourseAccessRoleForm(forms.ModelForm):
             user = User.objects.get(email=email)
         except Exception:
             raise forms.ValidationError(
-                "Email not exists. Could not find user by email address '{email}'.".format(
+                "Email not exists. Could not find user by email address {email}.".format(
                     email=email
                 )
             )

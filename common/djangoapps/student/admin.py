@@ -11,9 +11,11 @@ from student.models import (
 )
 from ratelimitbackend import admin
 from student.roles import REGISTERED_ACCESS_ROLES
-from opaque_keys import InvalidKeyError
+
 from xmodule.modulestore.django import modulestore
+
 from opaque_keys.edx.keys import CourseKey
+from opaque_keys import InvalidKeyError
 
 
 class CourseAccessRoleForm(forms.ModelForm):
@@ -26,7 +28,9 @@ class CourseAccessRoleForm(forms.ModelForm):
     role = forms.ChoiceField(choices=COURSE_ACCESS_ROLES)
 
     def clean_course_id(self):
-        """Checking course-id format and course exists in module store."""
+        """
+        Checking course-id format and course exists in module store.
+        """
         course_id = self.cleaned_data['course_id']
         try:
             course_key = CourseKey.from_string(course_id)
@@ -39,10 +43,12 @@ class CourseAccessRoleForm(forms.ModelForm):
         return course_key
 
     def clean_org(self):
-        """Checking organization name against the give course."""
+        """
+        Checking organization name against the give course.
+        """
         org = self.cleaned_data['org']
         if self.cleaned_data.get('course_id'):
-            course = modulestore().get_course(self.cleaned_data.get('course_id'), depth=None)
+            course = modulestore().get_course(self.cleaned_data.get('course_id'), depth=0)
             org_name = course.display_org_with_default
             if org.lower() != org_name.lower():
                 raise forms.ValidationError(
@@ -74,7 +80,9 @@ class CourseAccessRoleForm(forms.ModelForm):
         return user
 
     def clean(self):
-        """Checking the course already exists in db."""
+        """
+        Checking the course already exists in db.
+        """
         cleaned_data = super(CourseAccessRoleForm, self).clean()
         if CourseAccessRole.objects.filter(
                 user=cleaned_data.get("email"),

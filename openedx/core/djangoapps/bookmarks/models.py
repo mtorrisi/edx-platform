@@ -172,16 +172,17 @@ class Bookmark(TimeStampedModel):
             return []
 
         path_data = []
-        for ancestor_usage_key in path:
-            if ancestor_usage_key != usage_key and ancestor_usage_key.block_type != 'course':  # pylint: disable=no-member
-                try:
-                    block = modulestore().get_item(ancestor_usage_key)
-                except ItemNotFoundError:
-                    return []  # No valid path can be found.
+        with modulestore().bulk_operations(usage_key.course_key):
+            for ancestor_usage_key in path:
+                if ancestor_usage_key != usage_key and ancestor_usage_key.block_type != 'course':  # pylint: disable=no-member
+                    try:
+                        block = modulestore().get_item(ancestor_usage_key)
+                    except ItemNotFoundError:
+                        return []  # No valid path can be found.
 
-                path_data.append(
-                    PathItem(usage_key=block.location, display_name=block.display_name)
-                )
+                    path_data.append(
+                        PathItem(usage_key=block.location, display_name=block.display_name)
+                    )
 
         return path_data
 

@@ -42,8 +42,12 @@ class BookmarksTestsBase(ModuleStoreTestCase):
         self.admin = AdminFactory()
         self.user = UserFactory.create(password=self.TEST_PASSWORD)
         self.other_user = UserFactory.create(password=self.TEST_PASSWORD)
+        self.setup_test_data()
 
-        with self.store.default_store(self.STORE_TYPE):
+    def setup_test_data(self, store_type=ModuleStoreEnum.Type.split):
+
+        with self.store.default_store(store_type):
+
             self.course = CourseFactory.create(display_name='An Introduction to API Testing')
             self.course_id = unicode(self.course.id)
 
@@ -228,6 +232,40 @@ class BookmarkModelTests(BookmarksTestsBase):
             'display_name': block.display_name,
         }
 
+    @ddt.data(
+        (ModuleStoreEnum.Type.mongo, 'course', [], 3),
+        (ModuleStoreEnum.Type.mongo, 'chapter_1', [], 3),
+        (ModuleStoreEnum.Type.mongo, 'sequential_1', ['chapter_1'], 4),
+        (ModuleStoreEnum.Type.mongo, 'vertical_1', ['chapter_1', 'sequential_1'], 6),
+        (ModuleStoreEnum.Type.mongo, 'other_vertical_1', ['other_chapter_1', 'other_sequential_2'], 4),  # Two ancestors
+        (ModuleStoreEnum.Type.mongo, 'html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 7),
+        (ModuleStoreEnum.Type.split, 'course', [], 6),
+        (ModuleStoreEnum.Type.split, 'chapter_1', [], 5),
+        (ModuleStoreEnum.Type.split, 'sequential_1', ['chapter_1'], 6),
+        (ModuleStoreEnum.Type.split, 'vertical_1', ['chapter_1', 'sequential_1'], 6),
+        (ModuleStoreEnum.Type.split, 'other_vertical_1', ['other_chapter_1', 'other_sequential_1'], 4),  # Two ancestors
+        (ModuleStoreEnum.Type.split, 'html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 6),
+    )
+    @ddt.unpack
+    def test_get_path(self, store_type, block_to_bookmark, ancestors_attrs, expected_mongo_calls):
+
+        self.setup_test_data(store_type)
+        user = UserFactory.create()
+
+        expected_path = [PathItem(
+            usage_key=getattr(self, ancestor_attr).location, display_name=getattr(self, ancestor_attr).display_name
+        ) for ancestor_attr in ancestors_attrs]
+
+        bookmark_data = self.get_bookmark_data(getattr(self, block_to_bookmark), user=user)
+        XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
+
+        with check_mongo_calls(expected_mongo_calls):
+            bookmark = Bookmark.create(bookmark_data)
+
+        self.assertEqual(bookmark.path, expected_path)
+        self.assertIsNotNone(bookmark.xblock_cache)
+        self.assertEqual(bookmark.xblock_cache.paths, [])
+
     def test_create_bookmark_success(self):
         """
         Tests creation of bookmark.
@@ -280,33 +318,6 @@ class BookmarkModelTests(BookmarksTestsBase):
 
         self.assertEqual(bookmark.path, block_path)
         self.assertEqual(mock_get_path.call_count, get_path_call_count)
-
-    @ddt.data(
-        ('course', [], 5),
-        ('chapter_1', [], 4),
-        ('sequential_1', ['chapter_1'], 6),
-        ('vertical_1', ['chapter_1', 'sequential_1'], 8),
-        ('html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 10),
-        ('other_vertical_1', ['other_chapter_1', 'other_sequential_1'], 4),  # Has two ancestors
-    )
-    @ddt.unpack
-    def test_get_path(self, block_to_bookmark, ancestors_attrs, expected_mongo_calls):
-
-        user = UserFactory.create()
-
-        expected_path = [PathItem(
-            usage_key=getattr(self, ancestor_attr).location, display_name=getattr(self, ancestor_attr).display_name
-        ) for ancestor_attr in ancestors_attrs]
-
-        bookmark_data = self.get_bookmark_data(getattr(self, block_to_bookmark), user=user)
-        XBlockCache.objects.filter(usage_key=bookmark_data['usage_key']).delete()
-
-        with check_mongo_calls(expected_mongo_calls):
-            bookmark = Bookmark.create(bookmark_data)
-
-        self.assertEqual(bookmark.path, expected_path)
-        self.assertIsNotNone(bookmark.xblock_cache)
-        self.assertEqual(bookmark.xblock_cache.paths, [])
 
     @ddt.data(
         (ModuleStoreEnum.Type.mongo, 2, 2, 2),

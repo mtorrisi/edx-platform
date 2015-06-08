@@ -4,7 +4,10 @@ Tests for bookmark views.
 
 import ddt
 import json
+from unittest import skipUnless
 import urllib
+
+from django.conf import settings
 from django.core.urlresolvers import reverse
 from rest_framework.test import APIClient
 
@@ -61,6 +64,7 @@ class BookmarksViewsTestsBase(BookmarksTestsBase):
 
 
 @ddt.ddt
+@skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Tests only valid in LMS')
 class BookmarksListViewTests(BookmarksViewsTestsBase):
     """
     This contains the tests for GET & POST methods of bookmark.views.BookmarksListView class
@@ -280,6 +284,7 @@ class BookmarksListViewTests(BookmarksViewsTestsBase):
 
 
 @ddt.ddt
+@skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Tests only valid in LMS')
 class BookmarksDetailViewTests(BookmarksViewsTestsBase):
     """
     This contains the tests for GET & DELETE methods of bookmark.views.BookmarksDetailView class

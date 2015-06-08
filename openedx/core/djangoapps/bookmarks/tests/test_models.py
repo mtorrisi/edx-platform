@@ -6,6 +6,9 @@ import ddt
 from freezegun import freeze_time
 import mock
 import pytz
+from unittest import skipUnless
+
+from django.conf import settings
 
 from opaque_keys.edx.keys import UsageKey
 from opaque_keys.edx.locator import CourseLocator, BlockUsageLocator
@@ -209,6 +212,7 @@ class BookmarksTestsBase(ModuleStoreTestCase):
 
 
 @ddt.ddt
+@skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Tests only valid in LMS')
 class BookmarkModelTests(BookmarksTestsBase):
     """
     Test the Bookmark model.

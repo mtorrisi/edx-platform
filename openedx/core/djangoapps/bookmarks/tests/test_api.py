@@ -2,7 +2,9 @@
 Tests for bookmarks api.
 """
 import ddt
+from unittest import skipUnless
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 
 from opaque_keys.edx.keys import UsageKey
@@ -14,6 +16,7 @@ from .test_models import BookmarksTestsBase
 
 
 @ddt.ddt
+@skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Tests only valid in LMS')
 class BookmarksAPITests(BookmarksTestsBase):
     """
     These tests cover the parts of the API methods.

@@ -11,12 +11,12 @@ structure:
     'definition.children': <list of all child location.to_deprecated_string()s>
 }
 """
-
 import pymongo
 import sys
 import logging
 import copy
 import re
+from collections import defaultdict
 from uuid import uuid4
 
 from bson.son import SON
@@ -504,6 +504,9 @@ class ParentLocationCache(dict):
     Dict-based object augmented with a more cache-like interface, for internal use.
     """
     # pylint: disable=missing-docstring
+    def __init__(self, *args, **kwargs):
+        super(ParentLocationCache, self).__init__(*args, **kwargs)
+        self._values_to_keys = defaultdict(set)
 
     @contract(key=unicode)
     def has(self, key):
@@ -512,12 +515,14 @@ class ParentLocationCache(dict):
     @contract(key=unicode, value="BlockUsageLocator | None")
     def set(self, key, value):
         self[key] = value
+        self._values_to_keys[value].add(key)
 
     @contract(value="BlockUsageLocator")
     def delete_by_value(self, value):
-        keys_to_delete = [k for k, v in self.iteritems() if v == value]
+        keys_to_delete = self._values_to_keys.pop(value, set())
         for key in keys_to_delete:
             del self[key]
+
 
 
 class MongoModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase, MongoBulkOpsMixin):

@@ -35,44 +35,45 @@ class CourseAccessRoleForm(forms.ModelForm):
         try:
             course_key = CourseKey.from_string(course_id)
         except InvalidKeyError:
-            raise forms.ValidationError("Cannot make a valid CourseKey from id {}!".format(course_id))
+            raise forms.ValidationError(u"Cannot make a valid CourseKey from id {}!".format(course_id))
 
         if not modulestore().has_course(course_key):
-            raise forms.ValidationError("Cannot find course with id {} in the modulestore".format(course_id))
+            raise forms.ValidationError(u"Cannot find course with id {} in the modulestore".format(course_id))
 
         return course_key
 
     def clean_org(self):
         """
-        Checking organization name against the give course.
+        Checking organization name against the given course.
         """
         org = self.cleaned_data['org']
         if self.cleaned_data.get('course_id'):
-            course = modulestore().get_course(self.cleaned_data.get('course_id'), depth=0)
-            org_name = course.display_org_with_default
+            org_name = self.cleaned_data.get('course_id').org
             if org.lower() != org_name.lower():
                 raise forms.ValidationError(
-                    "Org name is not valid {}. Valid name is {}.".format(
+                    u"Org name {} is not valid. Valid name is {}.".format(
                         org, org_name
                     )
                 )
         else:
             raise forms.ValidationError(
-                "Cannot find course with id {} in the modulestore".format(
-                    self.cleaned_data.get('course_id')
+                u"Cannot find course with id {} in the modulestore".format(
+                    self.data["course_id"]
                 )
             )
 
         return self.cleaned_data['org'].lower()
 
     def clean_email(self):
-        """Checking user object against given email id."""
+        """
+        Checking user object against given email id.
+        """
         email = self.cleaned_data['email']
         try:
             user = User.objects.get(email=email)
         except Exception:
             raise forms.ValidationError(
-                "Email not exists. Could not find user by email address {email}.".format(
+                u"Email not exists. Could not find user by email address {email}.".format(
                     email=email
                 )
             )

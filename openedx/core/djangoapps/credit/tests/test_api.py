@@ -7,7 +7,7 @@ import ddt
 from opaque_keys.edx.keys import CourseKey
 
 from openedx.core.djangoapps.credit.api import (
-    get_credit_requirements, set_credit_requirements, _get_requirements_to_disable
+    get_credit_requirements, set_credit_requirements, _get_requirements_to_disable, set_credit_requirement_status
 )
 from openedx.core.djangoapps.credit.exceptions import InvalidCreditRequirements, InvalidCreditCourse
 from openedx.core.djangoapps.credit.models import CreditCourse, CreditRequirement
@@ -180,6 +180,40 @@ class ApiTestCases(ModuleStoreTestCase):
         ]
         requirements_to_disabled = _get_requirements_to_disable(old_requirements, requirements)
         self.assertEqual(len(requirements_to_disabled), 0)
+
+    def test_set_credit_requirement_status(self):
+        self.add_credit_course()
+        requirements = [
+            {
+                "namespace": "grade",
+                "name": "grade",
+                "display_name": "Grade",
+                "criteria": {
+                    "min_grade": 0.8
+                }
+            },
+            {
+                "namespace": "reverification",
+                "name": "i4x://edX/DemoX/edx-reverification-block/assessment_uuid",
+                "display_name": "Assessment 1",
+                "criteria": {}
+            }
+        ]
+
+        set_credit_requirements(self.course_key, requirements)
+        course_requirements = CreditRequirement.get_course_requirements(self.course_key)
+        self.assertEqual(len(course_requirements), 2)
+
+        requirement = CreditRequirement.get_course_requirement(self.course_key, "grade", "grade")
+        status, created = set_credit_requirement_status("staff", requirement, 'satisfied', {})
+        self.assertTrue(created)
+        self.assertEqual(status.requirement.namespace, requirement.namespace)
+
+        status, created = set_credit_requirement_status(
+            "staff", requirement, 'failed', {'failure_reason': "requirements not satisfied"}
+        )
+        self.assertFalse(created)
+        self.assertEqual(status.requirement.namespace, requirement.namespace)
 
     def add_credit_course(self, enabled=True):
         """

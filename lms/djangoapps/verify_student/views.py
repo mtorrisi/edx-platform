@@ -951,11 +951,11 @@ def _set_requirement_status(attempt, namespace, status, reason=None):
     """Set requirement status and the reason of status for given user in
     attempt.
     """
-    checkpoints = VerificationCheckpoint.objects.filter(photo_verification=attempt).all()
-    if checkpoints:
-        course_key = checkpoints[0].course_id
+    checkpoint = VerificationCheckpoint.objects.get(photo_verification=attempt)
+    if checkpoint is not None:
+        course_key = checkpoint.course_id
         credit_requirement = get_credit_requirement(
-            course_key, namespace, checkpoints[0].checkpoint_location
+            course_key, namespace, checkpoint.checkpoint_location
         )
         if credit_requirement is not None:
             try:

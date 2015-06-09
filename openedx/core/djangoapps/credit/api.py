@@ -126,20 +126,24 @@ def get_credit_requirement(course_key, namespace, name):
     return CreditRequirement.get_course_requirement(course_key, namespace, name)
 
 
-def set_credit_requirement_status(user_name, requirement, status="satisfied", reason=None):
+def set_credit_requirement_status(username, requirement, status="satisfied", reason=None):
     """Update Credit Requirement Status for given username and requirement
         if exists else add new.
 
     Args:
-        user_name(str): Username of the user
+        username(str): Username of the user
         requirement(CreditRequirement): 'CreditRequirement' object
         status(str): Status of the requirement
         reason(dict): Reason of the status
 
+    Returns:
+        'CreditRequirementStatus' object
+
     """
-    CreditRequirementStatus.add_or_update_requirement_status(
-        user_name, requirement, status, reason
+    requirement_status, created = CreditRequirementStatus.add_or_update_requirement_status(
+        username, requirement, status, reason
     )
+    return requirement_status, created
 
 
 def _get_requirements_to_disable(old_requirements, new_requirements):

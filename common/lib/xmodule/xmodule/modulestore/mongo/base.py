@@ -514,6 +514,12 @@ class ParentLocationCache(dict):
 
     @contract(key=unicode, value="BlockUsageLocator | None")
     def set(self, key, value):
+        # If the key already exists, we have to remove it from the reverse lookup
+        if key in self:
+            old_val = self[key]
+            old_val_keys = self._values_to_keys[old_val]
+            if key in old_val_keys:
+                old_val_keys.remove(key)
         self[key] = value
         self._values_to_keys[value].add(key)
 
@@ -521,7 +527,8 @@ class ParentLocationCache(dict):
     def delete_by_value(self, value):
         keys_to_delete = self._values_to_keys.pop(value, set())
         for key in keys_to_delete:
-            del self[key]
+            if key in self:
+                del self[key]
 
 
 
